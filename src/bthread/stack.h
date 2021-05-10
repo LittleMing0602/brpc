@@ -30,7 +30,7 @@
 
 namespace bthread {
 
-struct StackStorage {
+struct StackStorage {  //栈分配时会通过mmap匿名映射一段空间，然后将高地址位赋值给bottom
      int stacksize;
      int guardsize;
     // Assume stack grows upwards.
@@ -62,9 +62,9 @@ enum StackType {
 };
 
 struct ContextualStack {
-    bthread_fcontext_t context;
-    StackType stacktype;
-    StackStorage storage;
+    bthread_fcontext_t context;  // 指向协程栈顶
+    StackType stacktype;  // 栈的类型（大小）
+    StackStorage storage;  // 栈空间
 };
 
 // Get a stack in the `type' and run `entry' at the first time that the

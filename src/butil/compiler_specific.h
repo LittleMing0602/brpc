@@ -264,7 +264,7 @@
 #endif /* _MSC_VER */
 
 #ifdef __GNUC__
-# define BAIDU_CACHELINE_ALIGNMENT __attribute__((aligned(BAIDU_CACHELINE_SIZE)))
+# define BAIDU_CACHELINE_ALIGNMENT __attribute__((aligned(BAIDU_CACHELINE_SIZE)))  // BAIDU_CACHELINE_ALIGNMENT用来设置内存对齐方式，这里设为64字节对齐
 #endif /* __GNUC__ */
 
 #ifndef BAIDU_CACHELINE_ALIGNMENT

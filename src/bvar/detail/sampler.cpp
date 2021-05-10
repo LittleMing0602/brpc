@@ -58,6 +58,7 @@ static bool registered_atfork = false;
 // list of Samplers. Waking through the list and call take_sample().
 // If a Sampler needs to be deleted, we just mark it as unused and the
 // deletion is taken place in the thread as well.
+// 继承Reducer， CombinSampler是将Samplers连接起来
 class SamplerCollector : public bvar::Reducer<Sampler*, CombineSampler> {
 public:
     SamplerCollector()
@@ -141,20 +142,21 @@ void SamplerCollector::run() {
     if (s_sampling_thread_usage_bvar == NULL) {
         s_sampling_thread_usage_bvar =
             new bvar::PerSecond<bvar::PassiveStatus<double> >(
-                    "bvar_sampler_collector_usage", s_cumulated_time_bvar, 10);
+                    "bvar_sampler_collector_usage", s_cumulated_time_bvar, 10);  // 用来监控执行时间
     }
 #endif
 
-    butil::LinkNode<Sampler> root;
-    int consecutive_nosleep = 0;
+    butil::LinkNode<Sampler> root;  // 整个collector的根节点
+    int consecutive_nosleep = 0; // 保存连续没有sleep的次数，设定是每隔一秒采集一次，如果一秒内都没有执行完所有的sampler这个值就会加1，表明延迟了
     while (!_stop) {
         int64_t abstime = butil::gettimeofday_us();
-        Sampler* s = this->reset();
+        Sampler* s = this->reset();  // 把所有的sampler串起来返回后并重置为NULL
         if (s) {
             s->InsertBeforeAsList(&root);
         }
         int nremoved = 0;
         int nsampled = 0;
+        // 遍历链表进行采样
         for (butil::LinkNode<Sampler>* p = root.next(); p != &root;) {
             // We may remove p from the list, save next first.
             butil::LinkNode<Sampler>* saved_next = p->next();
@@ -166,7 +168,7 @@ void SamplerCollector::run() {
                 delete s;
                 ++nremoved;
             } else {
-                s->take_sample();
+                s->take_sample();  // 采样
                 s->_mutex.unlock();
                 ++nsampled;
             }
@@ -203,7 +205,7 @@ void Sampler::schedule() {
 
 void Sampler::destroy() {
     _mutex.lock();
-    _used = false;
+    _used = false;  // 这样collector在执行的时候会改sampler移出链表
     _mutex.unlock();
 }
 

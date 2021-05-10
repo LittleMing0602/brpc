@@ -47,7 +47,7 @@ private:
     void* _value;
 };
 
-// Thread-local group of tasks.
+// Thread-local group of tasks.线程局部的任务组，一个taskgroup对应一个worker
 // Notice that most methods involving context switching are static otherwise
 // pointer `this' may change after wakeup. The **pg parameters in following
 // function are updated before returning.

@@ -341,36 +341,36 @@ __asm (
 ".type bthread_jump_fcontext,@function\n"
 ".align 16\n"
 "bthread_jump_fcontext:\n"
-"    pushq  %rbp  \n"
+"    pushq  %rbp  \n"  // 344-349行将对应寄存器push到旧的协程栈中
 "    pushq  %rbx  \n"
 "    pushq  %r15  \n"
 "    pushq  %r14  \n"
 "    pushq  %r13  \n"
 "    pushq  %r12  \n"
-"    leaq  -0x8(%rsp), %rsp\n"
-"    cmp  $0, %rcx\n"
-"    je  1f\n"
+"    leaq  -0x8(%rsp), %rsp\n" // 将rsp下移8字节
+"    cmp  $0, %rcx\n"  // 比较rcx和0，因为rcx为0，所以zf为1
+"    je  1f\n"  // je 等于则跳转； 1 标签；f 向前跳转(forward)，若为b，则表示向后跳转(backward)
 "    stmxcsr  (%rsp)\n"
 "    fnstcw   0x4(%rsp)\n"
 "1:\n"
-"    movq  %rsp, (%rdi)\n"
-"    movq  %rsi, %rsp\n"
-"    cmp  $0, %rcx\n"
+"    movq  %rsp, (%rdi)\n"  // 将rsp保存至rdi中，rsp指向当前协程栈栈顶，rdi为第一个入参，即ofc
+"    movq  %rsi, %rsp\n"  // 将rsi保存到rsp中，rsi为第二个参数，即nfc，此时栈顶指针rsp指向了新的协程栈
+"    cmp  $0, %rcx\n"  // 比较rcx和0， rcx为第4个参数
 "    je  2f\n"
 "    ldmxcsr  (%rsp)\n"
 "    fldcw  0x4(%rsp)\n"
 "2:\n"
-"    leaq  0x8(%rsp), %rsp\n"
-"    popq  %r12  \n"
+"    leaq  0x8(%rsp), %rsp\n"  // 将rsp上移8字节
+"    popq  %r12  \n"  // 将协程栈中r12-rbp依次pop到对应寄存器
 "    popq  %r13  \n"
 "    popq  %r14  \n"
 "    popq  %r15  \n"
 "    popq  %rbx  \n"
 "    popq  %rbp  \n"
 "    popq  %r8\n"
-"    movq  %rdx, %rax\n"
-"    movq  %rdx, %rdi\n"
-"    jmp  *%r8\n"
+"    movq  %rdx, %rax\n"  // 将rdx保存到rax，rdx为第三个参数，rax为返回值
+"    movq  %rdx, %rdi\n"  // 将rdx保存到rdi，rdi为第一个入参，因此将作为新协程运行的入参
+"    jmp  *%r8\n"  // 跳转到r8对应的寄存器运行
 ".size bthread_jump_fcontext,.-bthread_jump_fcontext\n"
 ".section .note.GNU-stack,\"\",%progbits\n"
 ".previous\n"
@@ -385,15 +385,15 @@ __asm (
 ".type bthread_make_fcontext,@function\n"
 ".align 16\n"
 "bthread_make_fcontext:\n"
-"    movq  %rdi, %rax\n"
-"    andq  $-16, %rax\n"
-"    leaq  -0x48(%rax), %rax\n"
-"    movq  %rdx, 0x38(%rax)\n"
-"    stmxcsr  (%rax)\n"
-"    fnstcw   0x4(%rax)\n"
-"    leaq  finish(%rip), %rcx\n"
-"    movq  %rcx, 0x40(%rax)\n"
-"    ret \n"
+"    movq  %rdi, %rax\n"   // 将rdi赋给rax，rdi保存的是第一个参数，即stack的bottom
+"    andq  $-16, %rax\n"  // 对rax进行16字节对齐
+"    leaq  -0x48(%rax), %rax\n"  // 将rax下移72字节
+"    movq  %rdx, 0x38(%rax)\n"  // 将rdx保存至rax+56，rdx为第三个参数，即函数fn的地址
+"    stmxcsr  (%rax)\n"  // 保存MXCSR寄存器（sse浮点数运算状态寄存器，32位）到rax所在位置
+"    fnstcw   0x4(%rax)\n"  // 将FPU控制字的当前值存储到rax+4
+"    leaq  finish(%rip), %rcx\n" // 计算finish的绝对地址，保存到rcx中
+"    movq  %rcx, 0x40(%rax)\n"  // 将rcx保存到rax+64
+"    ret \n"  // 返回， rax保存的是栈底，因此返回的是协程栈的栈底
 "finish:\n"
 "    xorq  %rdi, %rdi\n"
 "    call  _exit@PLT\n"

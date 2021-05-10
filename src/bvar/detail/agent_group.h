@@ -179,10 +179,10 @@ private:
         return *_s_free_ids;
     }
 
-    static pthread_mutex_t                      _s_mutex;
-    static AgentId                              _s_agent_kinds;
-    static std::deque<AgentId>                  *_s_free_ids;
-    static __thread std::vector<ThreadBlock *>  *_s_tls_blocks;
+    static pthread_mutex_t                      _s_mutex;  // 新建和销毁Agent要用到的锁
+    static AgentId                              _s_agent_kinds;  // 当前Agentgroup的agent数量，同时也用于构造AgentId
+    static std::deque<AgentId>                  *_s_free_ids;  // 保存了空闲的AgentId
+    static __thread std::vector<ThreadBlock *>  *_s_tls_blocks;  // 保存了指向每个线程的数据块的指针
 };
 
 template <typename Agent>

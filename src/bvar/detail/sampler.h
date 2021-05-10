@@ -32,6 +32,7 @@
 namespace bvar {
 namespace detail {
 
+// 用于保存采样值的结构体
 template <typename T>
 struct Sample {
     T data;
@@ -42,7 +43,7 @@ struct Sample {
 };
 
 // The base class for all samplers whose take_sample() are called periodically.
-class Sampler : public butil::LinkNode<Sampler> {
+class Sampler : public butil::LinkNode<Sampler> {  // 奇异递归模板模式
 public:
     Sampler();
         
@@ -140,6 +141,7 @@ public:
         _q.elim_push(latest);
     }
 
+    // 获取某个时间点到现在的sample值
     bool get_value(time_t window_size, Sample<T>* result) {
         if (window_size <= 0) {
             LOG(FATAL) << "Invalid window_size=" << window_size;
@@ -212,9 +214,9 @@ public:
     }
 
 private:
-    R* _reducer;
-    time_t _window_size;
-    butil::BoundedQueue<Sample<T> > _q;
+    R* _reducer;  // reducer指针
+    time_t _window_size;  // 当前Sampler的窗口指导大小，实际大小由_q的大小决定，在采样过程中会根据_window_size调整_q的大小
+    butil::BoundedQueue<Sample<T> > _q; // 保存采样结果的队列
 };
 
 }  // namespace detail

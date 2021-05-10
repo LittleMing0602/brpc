@@ -248,6 +248,7 @@ int TaskGroup::init(size_t runqueue_capacity) {
     return 0;
 }
 
+// 用户函数的入口函数
 void TaskGroup::task_runner(intptr_t skip_remained) {
     // NOTE: tls_task_group is volatile since tasks are moved around
     //       different groups.
@@ -360,16 +361,17 @@ int TaskGroup::start_foreground(TaskGroup** pg,
                                 const bthread_attr_t* __restrict attr,
                                 void * (*fn)(void*),
                                 void* __restrict arg) {
-    if (__builtin_expect(!fn, 0)) {
-        return EINVAL;
+    if (__builtin_expect(!fn, 0)) {  // 分支预测优化
+        return EINVAL;  // invalid argument
     }
-    const int64_t start_ns = butil::cpuwide_time_ns();
+    const int64_t start_ns = butil::cpuwide_time_ns();  // 开始时间，单位为ns
     const bthread_attr_t using_attr = (attr ? *attr : BTHREAD_ATTR_NORMAL);
-    butil::ResourceId<TaskMeta> slot;
-    TaskMeta* m = butil::get_resource(&slot);
+    butil::ResourceId<TaskMeta> slot;  //资源id，uint64的包装
+    TaskMeta* m = butil::get_resource(&slot);  // 获取一个TaskMeta
     if (__builtin_expect(!m, 0)) {
         return ENOMEM;
     }
+    // 初始化m
     CHECK(m->current_waiter.load(butil::memory_order_relaxed) == NULL);
     m->stop = false;
     m->interrupted = false;
@@ -598,6 +600,7 @@ void TaskGroup::sched_to(TaskGroup** pg, TaskMeta* next_meta) {
                       << next_meta->tid;
         }
 
+        // 进行堆栈的切换
         if (cur_meta->stack != NULL) {
             if (next_meta->stack != cur_meta->stack) {
                 jump_stack(cur_meta->stack, next_meta->stack);

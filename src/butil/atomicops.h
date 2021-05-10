@@ -234,7 +234,7 @@ public:
         return *this;
     }
 private:
-    DISALLOW_COPY_AND_ASSIGN(atomic);
+    DISALLOW_COPY_AND_ASSIGN(atomic); // 禁止拷贝构造函数和赋值函数
     // Make sure memory layout of std::atomic<T> and boost::atomic<T>
     // are same so that different compilation units seeing different 
     // definitions(enable C++11 or not) should be compatible.

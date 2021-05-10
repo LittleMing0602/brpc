@@ -75,10 +75,10 @@ extern "C"{
 #endif
 
 intptr_t BTHREAD_CONTEXT_CALL_CONVENTION
-bthread_jump_fcontext(bthread_fcontext_t * ofc, bthread_fcontext_t nfc,
+bthread_jump_fcontext(bthread_fcontext_t * ofc, bthread_fcontext_t nfc,  // 参数：旧协程栈顶，新协程栈顶
                       intptr_t vp, bool preserve_fpu = false);
 bthread_fcontext_t BTHREAD_CONTEXT_CALL_CONVENTION
-bthread_make_fcontext(void* sp, size_t size, void (* fn)( intptr_t));
+bthread_make_fcontext(void* sp, size_t size, void (* fn)( intptr_t));  //参数：栈底，栈大小，bthread要执行的函数
 
 #ifdef __cplusplus
 };

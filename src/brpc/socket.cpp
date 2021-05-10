@@ -594,8 +594,8 @@ int Socket::Create(const SocketOptions& options, SocketId* id) {
     m->_nevent.store(0, butil::memory_order_relaxed);
     m->_keytable_pool = options.keytable_pool;
     m->_tos = 0;
-    m->_remote_side = options.remote_side;
-    m->_on_edge_triggered_events = options.on_edge_triggered_events;
+    m->_remote_side = options.remote_side;  // 远端地址
+    m->_on_edge_triggered_events = options.on_edge_triggered_events;  // 回调函数
     m->_user = options.user;
     m->_conn = options.conn;
     m->_app_connect = options.app_connect;

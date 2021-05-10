@@ -42,7 +42,8 @@
 #endif
 
 namespace butil {
-    
+
+// ResourceId是resource pool中某个资源的唯一标识，所有的资源获取和归还都是基于ResouceId的
 template <typename T>
 struct ResourceId {
     uint64_t value;
@@ -58,16 +59,16 @@ struct ResourceId {
     }
 };
 
-template <typename T, size_t NITEM> 
+template <typename T, size_t NITEM>
 struct ResourcePoolFreeChunk {
-    size_t nfree;
-    ResourceId<T> ids[NITEM];
+    size_t nfree;  // 空闲的资源个数
+    ResourceId<T> ids[NITEM];  // ResourceId数组
 };
 // for gcc 3.4.5
-template <typename T> 
+template <typename T>
 struct ResourcePoolFreeChunk<T, 0> {
     size_t nfree;
-    ResourceId<T> ids[0];
+    ResourceId<T> ids[0]; // GNU c 中的用法，长度为0的数组，用于变长buffer
 };
 
 struct ResourcePoolInfo {
@@ -88,6 +89,7 @@ static const size_t RP_GROUP_NBLOCK_NBIT = 16;
 static const size_t RP_GROUP_NBLOCK = (1UL << RP_GROUP_NBLOCK_NBIT);
 static const size_t RP_INITIAL_FREE_LIST_SIZE = 1024;
 
+// 资源池中一个block中的item数
 template <typename T>
 class ResourcePoolBlockItemNum {
     static const size_t N1 = ResourcePoolBlockMaxSize<T>::value / sizeof(T);
@@ -106,15 +108,16 @@ public:
 
     // Free identifiers are batched in a FreeChunk before they're added to
     // global list(_free_chunks).
-    typedef ResourcePoolFreeChunk<T, FREE_CHUNK_NITEM>      FreeChunk;
-    typedef ResourcePoolFreeChunk<T, 0> DynamicFreeChunk;
+    typedef ResourcePoolFreeChunk<T, FREE_CHUNK_NITEM>      FreeChunk;  // 固定大小的freechunk
+    typedef ResourcePoolFreeChunk<T, 0> DynamicFreeChunk;  // 利用柔性数组实现的变长chunk
 
     // When a thread needs memory, it allocates a Block. To improve locality,
     // items in the Block are only used by the thread.
     // To support cache-aligned objects, align Block.items by cacheline.
+    // Resource pool在内存分配上是按块来的，BLock受BlockGroup管理
     struct BAIDU_CACHELINE_ALIGNMENT Block {
-        char items[sizeof(T) * BLOCK_NITEM];
-        size_t nitem;
+        char items[sizeof(T) * BLOCK_NITEM]; // 提前分配好内存
+        size_t nitem; // 当前Block中已建立的item的数量，初始化为0
 
         Block() : nitem(0) {}
     };
@@ -123,8 +126,8 @@ public:
     // each BlockGroup addresses at most RP_GROUP_NBLOCK blocks. So a
     // resource addresses at most RP_MAX_BLOCK_NGROUP * RP_GROUP_NBLOCK Blocks.
     struct BlockGroup {
-        butil::atomic<size_t> nblock;
-        butil::atomic<Block*> blocks[RP_GROUP_NBLOCK];
+        butil::atomic<size_t> nblock;  // Block数量，初始化为0
+        butil::atomic<Block*> blocks[RP_GROUP_NBLOCK];  // Block指针数组，提前分配内存，构造函数中所有指针初始化为NULL
 
         BlockGroup() : nblock(0) {
             // We fetch_add nblock in add_block() before setting the entry,
@@ -147,6 +150,7 @@ public:
 
         ~LocalPool() {
             // Add to global _free_chunks if there're some free resources
+            // 线程退出的时候如果有空闲的资源，就把它放到全局中去
             if (_cur_free.nfree) {
                 _pool->push_free_chunk(_cur_free);
             }
@@ -162,8 +166,12 @@ public:
         // which may include parenthesis because when T is POD, "new T()"
         // and "new T" are different: former one sets all fields to 0 which
         // we don't want.
+        // POD，Plain Old Data，基本数据类型、指针、union、数组、trivial构造函数的struct或者
+        // class都属于这类数据，这类数据属于C++中与C相兼容的数据，可以按照C的方式来处理
+        // （运算、拷贝等），这里是想要调用new T而不是new T()来避免不必要的memset，节省开销
+        //
 #define BAIDU_RESOURCE_POOL_GET(CTOR_ARGS)                              \
-        /* Fetch local free id */                                       \
+        /* Fetch local free id, 本地有空闲资源，直接从block中返回 */                                       \
         if (_cur_free.nfree) {                                          \
             const ResourceId<T> free_id = _cur_free.ids[--_cur_free.nfree]; \
             *id = free_id;                                              \
@@ -172,7 +180,8 @@ public:
         }                                                               \
         /* Fetch a FreeChunk from global.                               \
            TODO: Popping from _free needs to copy a FreeChunk which is  \
-           costly, but hardly impacts amortized performance. */         \
+           costly, but hardly impacts amortized performance.            \
+           从全局的free_chunk中取空闲资源                     */         \
         if (_pool->pop_free_chunk(_cur_free)) {                         \
             --_cur_free.nfree;                                          \
             const ResourceId<T> free_id =  _cur_free.ids[_cur_free.nfree]; \
@@ -180,9 +189,10 @@ public:
             BAIDU_RESOURCE_POOL_FREE_ITEM_NUM_SUB1;                   \
             return unsafe_address_resource(free_id);                    \
         }                                                               \
-        /* Fetch memory from local block */                             \
+        /* Fetch memory from local block  在本地block新建资源*/          \
         if (_cur_block && _cur_block->nitem < BLOCK_NITEM) {            \
             id->value = _cur_block_index * BLOCK_NITEM + _cur_block->nitem; \
+            /* 在指定内存空间上新建对象，而不分配内存 */                        \
             T* p = new ((T*)_cur_block->items + _cur_block->nitem) T CTOR_ARGS; \
             if (!ResourcePoolValidator<T>::validate(p)) {               \
                 p->~T();                                                \
@@ -192,6 +202,8 @@ public:
             return p;                                                   \
         }                                                               \
         /* Fetch a Block from global */                                 \
+        /* 如果_cur_block没初始化或者已经满了，                           \
+        * 则新建一个block把指针赋给_cur_block，在block中新建对象 */        \
         _cur_block = add_block(&_cur_block_index);                      \
         if (_cur_block != NULL) {                                       \
             id->value = _cur_block_index * BLOCK_NITEM + _cur_block->nitem; \
@@ -204,7 +216,7 @@ public:
             return p;                                                   \
         }                                                               \
         return NULL;                                                    \
- 
+
 
         inline T* get(ResourceId<T>* id) {
             BAIDU_RESOURCE_POOL_GET();
@@ -222,8 +234,9 @@ public:
 
 #undef BAIDU_RESOURCE_POOL_GET
 
+        // 归还资源
         inline int return_resource(ResourceId<T> id) {
-            // Return to local free list
+            // Return to local free list 优先还到本地的freechunk中去
             if (_cur_free.nfree < ResourcePool::free_chunk_nitem()) {
                 _cur_free.ids[_cur_free.nfree++] = id;
                 BAIDU_RESOURCE_POOL_FREE_ITEM_NUM_ADD1;
@@ -231,6 +244,8 @@ public:
             }
             // Local free list is full, return it to global.
             // For copying issue, check comment in upper get()
+            // 本地freechunk满了，就把这个chunk放到全局_free_chunks中去
+            // 然后在这个空闲的资源id放到本地的_cur_free中
             if (_pool->push_free_chunk(_cur_free)) {
                 _cur_free.nfree = 1;
                 _cur_free.ids[0] = id;
@@ -324,7 +339,7 @@ public:
         const size_t n = ResourcePoolFreeChunkMaxItem<T>::value();
         return n < FREE_CHUNK_NITEM ? n : FREE_CHUNK_NITEM;
     }
-    
+
     // Number of all allocated objects, including being used and free.
     ResourcePoolInfo describe_resources() const {
         ResourcePoolInfo info;
@@ -357,6 +372,7 @@ public:
         return info;
     }
 
+    // 使用release-consume语义来保证某线程的新建对其他线程读取的可见性
     static inline ResourcePool* singleton() {
         ResourcePool* p = _singleton.load(butil::memory_order_consume);
         if (p) {
@@ -367,7 +383,7 @@ public:
         if (!p) {
             p = new ResourcePool();
             _singleton.store(p, butil::memory_order_release);
-        } 
+        }
         pthread_mutex_unlock(&_singleton_mutex);
         return p;
     }
@@ -437,6 +453,7 @@ private:
 
     inline LocalPool* get_or_new_local_pool() {
         LocalPool* lp = _local_pool;
+        // 判断_local_pool是否已经有了，有就直接返回，没有就新建
         if (lp != NULL) {
             return lp;
         }
@@ -446,7 +463,7 @@ private:
         }
         BAIDU_SCOPED_LOCK(_change_thread_mutex); //avoid race with clear()
         _local_pool = lp;
-        butil::thread_atexit(LocalPool::delete_local_pool, lp);
+        butil::thread_atexit(LocalPool::delete_local_pool, lp);  // 注册线程退出函数，pthread退出后删除_local_pool
         _nlocal.fetch_add(1, butil::memory_order_relaxed);
         return lp;
     }
@@ -460,9 +477,9 @@ private:
         }
 
         // Can't delete global even if all threads(called ResourcePool
-        // functions) quit because the memory may still be referenced by 
+        // functions) quit because the memory may still be referenced by
         // other threads. But we need to validate that all memory can
-        // be deallocated correctly in tests, so wrap the function with 
+        // be deallocated correctly in tests, so wrap the function with
         // a macro which is only defined in unittests.
 #ifdef BAIDU_CLEAR_RESOURCE_POOL_AFTER_ALL_THREADS_QUIT
         BAIDU_SCOPED_LOCK(_change_thread_mutex);  // including acquire fence.
@@ -527,7 +544,7 @@ private:
 
     bool push_free_chunk(const FreeChunk& c) {
         DynamicFreeChunk* p = (DynamicFreeChunk*)malloc(
-            offsetof(DynamicFreeChunk, ids) + sizeof(*c.ids) * c.nfree);
+            offsetof(DynamicFreeChunk, ids) + sizeof(*c.ids) * c.nfree);  // 利用DynamicFreeChunk柔性数组的特性，根据c的大小分配内存
         if (!p) {
             return false;
         }
@@ -538,11 +555,11 @@ private:
         pthread_mutex_unlock(&_free_chunks_mutex);
         return true;
     }
-    
+
     static butil::static_atomic<ResourcePool*> _singleton;
     static pthread_mutex_t _singleton_mutex;
     static BAIDU_THREAD_LOCAL LocalPool* _local_pool;
-    static butil::static_atomic<long> _nlocal;
+    static butil::static_atomic<long> _nlocal;  // 表明T来兴的resource pool的local pool数量
     static butil::static_atomic<size_t> _ngroup;
     static pthread_mutex_t _block_group_mutex;
     static pthread_mutex_t _change_thread_mutex;

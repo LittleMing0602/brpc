@@ -152,7 +152,7 @@ private:
     butil::atomic<T> _value;
 };
 
-template <typename ResultTp, typename ElementTp, typename BinaryOp>
+template <typename ResultTp, typename ElementTp, typename BinaryOp> // 模板参数：结果类型，元素类型，二元操作符
 class AgentCombiner {
 public:
     typedef ResultTp result_type;
@@ -160,7 +160,7 @@ public:
     typedef AgentCombiner<ResultTp, ElementTp, BinaryOp> self_type;
 friend class GlobalValue<self_type>;
     
-    struct Agent : public butil::LinkNode<Agent> {
+    struct Agent : public butil::LinkNode<Agent> {  // 奇异递归模板模式(Curiously Recurring Template Pattern, CRTP)
         Agent() : combiner(NULL) {}
 
         ~Agent() {
@@ -208,8 +208,8 @@ friend class GlobalValue<self_type>;
             element.merge_global(op, g);
         }
 
-        self_type *combiner;
-        ElementContainer<ElementTp> element;
+        self_type *combiner;  // 当前agent所属bvar的combiner
+        ElementContainer<ElementTp> element;  // 实际保存数据
     };
 
     typedef detail::AgentGroup<Agent> AgentGroup;
@@ -217,7 +217,7 @@ friend class GlobalValue<self_type>;
     explicit AgentCombiner(const ResultTp result_identity = ResultTp(),
                            const ElementTp element_identity = ElementTp(),
                            const BinaryOp& op = BinaryOp())
-        : _id(AgentGroup::create_new_agent())
+        : _id(AgentGroup::create_new_agent())  // 新建或者获取空闲的Agentid, 给当前bvar分配一个独有的id
         , _op(op)
         , _global_result(result_identity)
         , _result_identity(result_identity)
@@ -226,13 +226,14 @@ friend class GlobalValue<self_type>;
 
     ~AgentCombiner() {
         if (_id >= 0) {
-            clear_all_agents();
-            AgentGroup::destroy_agent(_id);
+            clear_all_agents();  // 清除_agents中的agent
+            AgentGroup::destroy_agent(_id); // 放回id到空闲列表
             _id = -1;
         }
     }
     
     // [Threadsafe] May be called from anywhere
+    // 汇聚所有agent的值返回
     ResultTp combine_agents() const {
         ElementTp tls_value;
         butil::AutoLock guard(_lock);
@@ -251,6 +252,7 @@ friend class GlobalValue<self_type>;
     { return _result_identity; }
 
     // [Threadsafe] May be called from anywhere.
+    // 重置所有的agent，包括combiner内部的_global_result，返回汇总值
     ResultTp reset_all_agents() {
         ElementTp prev;
         butil::AutoLock guard(_lock);
@@ -290,6 +292,7 @@ friend class GlobalValue<self_type>;
     }
 
     // We need this function to be as fast as possible.
+    // 获取或者创建本线程对应的agent
     inline Agent* get_or_create_tls_agent() {
         Agent* agent = AgentGroup::get_tls_agent(_id);
         if (!agent) {
@@ -312,6 +315,7 @@ friend class GlobalValue<self_type>;
         return agent;
     }
 
+    //清除所有agents
     void clear_all_agents() {
         butil::AutoLock guard(_lock);
         // reseting agents is must because the agent object may be reused.
@@ -331,13 +335,13 @@ friend class GlobalValue<self_type>;
     bool valid() const { return _id >= 0; }
 
 private:
-    AgentId                                     _id;
-    BinaryOp                                    _op;
-    mutable butil::Lock                          _lock;
-    ResultTp                                    _global_result;
-    ResultTp                                    _result_identity;
-    ElementTp                                   _element_identity;
-    butil::LinkedList<Agent>                     _agents;
+    AgentId                                     _id;  // 对应当前bvar变量的一个id，用于去tls_block中寻址
+    BinaryOp                                    _op;  // 此bvar的操作符
+    mutable butil::Lock                          _lock;  // 用于操作全局汇总结果的锁
+    ResultTp                                    _global_result;  // 用来保存汇总结果
+    ResultTp                                    _result_identity;  // 初始化过后不经其他修改的变量，被各种reset性质的函数用来清空变量
+    ElementTp                                   _element_identity;  // 初始化过后不经其他修改的变量，被各种reset性质的函数用来清空变量
+    butil::LinkedList<Agent>                     _agents;  // 保存了当前bvar所有agent的链表
 };
 
 }  // namespace detail

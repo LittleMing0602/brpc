@@ -60,9 +60,9 @@ inline void TaskGroup::exchange(TaskGroup** pg, bthread_t next_tid) {
 }
 
 inline void TaskGroup::sched_to(TaskGroup** pg, bthread_t next_tid) {
-    TaskMeta* next_meta = address_meta(next_tid);
-    if (next_meta->stack == NULL) {
-        ContextualStack* stk = get_stack(next_meta->stack_type(), task_runner);
+    TaskMeta* next_meta = address_meta(next_tid);  // 去除next_tid对应的task_meta
+    if (next_meta->stack == NULL) {  // 如果meta的stack为空，则说明这是新建的bthread
+        ContextualStack* stk = get_stack(next_meta->stack_type(), task_runner); // 从资源池中分配stack
         if (stk) {
             next_meta->set_stack(stk);
         } else {

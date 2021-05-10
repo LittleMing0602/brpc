@@ -63,7 +63,7 @@ pthread_mutex_t g_task_control_mutex = PTHREAD_MUTEX_INITIALIZER;
 // are not constructed before main().
 TaskControl* g_task_control = NULL;
 
-extern BAIDU_THREAD_LOCAL TaskGroup* tls_task_group;
+extern BAIDU_THREAD_LOCAL TaskGroup* tls_task_group;  // TLS:线程局部存储。这个变量是线程局部变量，记录当前线程所属的taskgroup
 extern void (*g_worker_startfn)();
 
 inline TaskControl* get_task_control() {
@@ -174,6 +174,7 @@ int bthread_start_urgent(bthread_t* __restrict tid,
                          void * (*fn)(void*),
                          void* __restrict arg) {
     bthread::TaskGroup* g = bthread::tls_task_group;
+    // 判断是不是bthread
     if (g) {
         // start from worker
         return bthread::TaskGroup::start_foreground(&g, tid, attr, fn, arg);

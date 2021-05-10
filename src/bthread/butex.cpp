@@ -112,13 +112,14 @@ typedef butil::LinkedList<ButexWaiter> ButexWaiterList;
 
 enum ButexPthreadSignal { PTHREAD_NOT_SIGNALLED, PTHREAD_SIGNALLED };
 
+// Butex是用来实现Bthread粒度的锁
 struct BAIDU_CACHELINE_ALIGNMENT Butex {
     Butex() {}
     ~Butex() {}
 
     butil::atomic<int> value;
-    ButexWaiterList waiters;
-    internal::FastPthreadMutex waiter_lock;
+    ButexWaiterList waiters;  // 该butex上挂起的bthread或pthread
+    internal::FastPthreadMutex waiter_lock;  // 使用的是FastPhtreadMutex或pthread_mutex_t，将比较value是否为expect_value和挂起bthread放在同一个临界区
 };
 
 BAIDU_CASSERT(offsetof(Butex, value) == 0, offsetof_value_must_0);
@@ -273,6 +274,7 @@ int butex_wake(void* arg) {
         front->RemoveFromList();
         front->container.store(NULL, butil::memory_order_relaxed);
     }
+    // 如果front是pthread
     if (front->tid == 0) {
         wakeup_pthread(static_cast<ButexPthreadWaiter*>(front));
         return 1;
@@ -280,9 +282,9 @@ int butex_wake(void* arg) {
     ButexBthreadWaiter* bbw = static_cast<ButexBthreadWaiter*>(front);
     unsleep_if_necessary(bbw, get_global_timer_thread());
     TaskGroup* g = tls_task_group;
-    if (g) {
+    if (g) { // 如果是bthread_worker
         TaskGroup::exchange(&g, bbw->tid);
-    } else {
+    } else { // 如果不是bthread_worker
         bbw->control->choose_one_group()->ready_to_run_remote(bbw->tid);
     }
     return 1;
@@ -508,8 +510,10 @@ static void wait_for_butex(void* arg) {
     // tt_lock represents TimerThread::_mutex. Visibility of waiter_state is
     // sequenced by two locks, both threads are guaranteed to see the correct
     // value.
+    // 临界区
     {
         BAIDU_SCOPED_LOCK(b->waiter_lock);
+        // 首先再次判断expect_value是否等于butex中的value，如果相等，则把waiter加入到butex的等待队列中去，如果不相等，则将waiter重新加入到rq中等待调度
         if (b->value.load(butil::memory_order_relaxed) != bw->expected_value) {
             bw->waiter_state = WAITER_STATE_UNMATCHEDVALUE;
         } else if (bw->waiter_state == WAITER_STATE_READY/*1*/ &&
@@ -617,9 +621,11 @@ int butex_wait(void* arg, int expected_value, const timespec* abstime) {
         return -1;
     }
     TaskGroup* g = tls_task_group;
-    if (NULL == g || g->is_current_pthread_task()) {
+    if (NULL == g || g->is_current_pthread_task()) {  // 如果当前线程是bthread worker
         return butex_wait_from_pthread(g, b, expected_value, abstime);
     }
+
+    // 创建waiter
     ButexBthreadWaiter bbw;
     // tid is 0 iff the thread is non-bthread
     bbw.tid = g->current_tid();
@@ -634,6 +640,7 @@ int butex_wait(void* arg, int expected_value, const timespec* abstime) {
     if (abstime != NULL) {
         // Schedule timer before queueing. If the timer is triggered before
         // queueing, cancel queueing. This is a kind of optimistic locking.
+        // 设置超时，如果超时直接唤醒
         if (butil::timespec_to_microseconds(*abstime) <
             (butil::gettimeofday_us() + MIN_SLEEP_US)) {
             // Already timed out.

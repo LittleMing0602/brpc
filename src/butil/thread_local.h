@@ -24,7 +24,7 @@
 #include <cstddef>                  // NULL
 #include "butil/macros.h"            
 
-#ifdef _MSC_VER
+#ifdef _MSC_VER  // 微软c编译器版本
 #define BAIDU_THREAD_LOCAL __declspec(thread)
 #else
 #define BAIDU_THREAD_LOCAL __thread

@@ -53,6 +53,7 @@ static int64_t get_stack_count(void*) {
 static bvar::PassiveStatus<int64_t> bvar_stack_count(
     "bthread_stack_count", get_stack_count, NULL);
 
+// 分配栈空间
 int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) {
     const static int PAGESIZE = getpagesize();
     const int PAGESIZE_M1 = PAGESIZE - 1;
@@ -72,7 +73,7 @@ int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) 
             return -1;
         }
         s_stack_count.fetch_add(1, butil::memory_order_relaxed);
-        s->bottom = (char*)mem + stacksize;
+        s->bottom = (char*)mem + stacksize;  // 高地址赋给bottom
         s->stacksize = stacksize;
         s->guardsize = 0;
         if (RunningOnValgrind()) {
@@ -90,7 +91,7 @@ int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) 
 
         const int memsize = stacksize + guardsize;
         void* const mem = mmap(NULL, memsize, (PROT_READ | PROT_WRITE),
-                               (MAP_PRIVATE | MAP_ANONYMOUS), -1, 0);
+                               (MAP_PRIVATE | MAP_ANONYMOUS), -1, 0); // 使用mmap匿名映射一段空间
 
         if (MAP_FAILED == mem) {
             PLOG_EVERY_SECOND(ERROR) 

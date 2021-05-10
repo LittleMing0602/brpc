@@ -55,6 +55,7 @@ void run_worker_startfn() {
     }
 }
 
+// worker线程的运行函数
 void* TaskControl::worker_thread(void* arg) {
     run_worker_startfn();    
 #ifdef BAIDU_INTERNAL
@@ -62,7 +63,7 @@ void* TaskControl::worker_thread(void* arg) {
 #endif
     
     TaskControl* c = static_cast<TaskControl*>(arg);
-    TaskGroup* g = c->create_group();
+    TaskGroup* g = c->create_group(); // 创建自己的taskgroup
     TaskStatistics stat;
     if (NULL == g) {
         LOG(ERROR) << "Fail to create TaskGroup in pthread=" << pthread_self();
@@ -71,9 +72,9 @@ void* TaskControl::worker_thread(void* arg) {
     BT_VLOG << "Created worker=" << pthread_self()
             << " bthread=" << g->main_tid();
 
-    tls_task_group = g;
+    tls_task_group = g;  // 初始化tls_task_group，指向该worker线程的task_group
     c->_nworkers << 1;
-    g->run_main_task();
+    g->run_main_task();  // 执行主任务，不断循环等待可以执行的bthread，包括去其他的worker线程偷
 
     stat = g->main_stat();
     BT_VLOG << "Destroying worker=" << pthread_self() << " bthread="
