@@ -212,13 +212,13 @@ friend class TaskControl;
     bool wait_task(bthread_t* tid);
 
     bool steal_task(bthread_t* tid) {
-        if (_remote_rq.pop(tid)) {
+        if (_remote_rq.pop(tid)) {  // 先从task_group中的_remote_rq里面pop
             return true;
         }
 #ifndef BTHREAD_DONT_SAVE_PARKING_STATE
         _last_pl_state = _pl->get_state();
 #endif
-        return _control->steal_task(tid, &_steal_seed, _steal_offset);
+        return _control->steal_task(tid, &_steal_seed, _steal_offset); // 如果当前没有，再去其他task_group中的_rq或者_remote_rq偷
     }
 
 #ifndef NDEBUG
@@ -247,8 +247,8 @@ friend class TaskControl;
     size_t _steal_offset;
     ContextualStack* _main_stack;
     bthread_t _main_tid;
-    WorkStealingQueue<bthread_t> _rq;
-    RemoteTaskQueue _remote_rq;
+    WorkStealingQueue<bthread_t> _rq;  // 执行队列
+    RemoteTaskQueue _remote_rq;  // 执行队列
     int _remote_num_nosignal;
     int _remote_nsignaled;
 };

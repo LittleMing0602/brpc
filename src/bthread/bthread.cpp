@@ -125,7 +125,7 @@ start_from_non_worker(bthread_t* __restrict tid,
                       const bthread_attr_t* __restrict attr,
                       void * (*fn)(void*),
                       void* __restrict arg) {
-    TaskControl* c = get_or_new_task_control();
+    TaskControl* c = get_or_new_task_control();  // 尝试获取task_control单例，没有则创建一个，并初始化好一定数量的task_group
     if (NULL == c) {
         return ENOMEM;
     }
@@ -142,7 +142,7 @@ start_from_non_worker(bthread_t* __restrict tid,
         return g->start_background<true>(tid, attr, fn, arg);
     }
     return c->choose_one_group()->start_background<true>(
-        tid, attr, fn, arg);
+        tid, attr, fn, arg);  // 选择一个taskgroup，调用start_background<true>
 }
 
 struct TidTraits {
@@ -173,10 +173,10 @@ int bthread_start_urgent(bthread_t* __restrict tid,
                          const bthread_attr_t* __restrict attr,
                          void * (*fn)(void*),
                          void* __restrict arg) {
-    bthread::TaskGroup* g = bthread::tls_task_group;
-    // 判断是不是bthread
+    bthread::TaskGroup* g = bthread::tls_task_group;  // 只有worker线程才为非空
+    // 判断是worker线程还是普通的pthread线程
     if (g) {
-        // start from worker
+        // start from worker 如果是worker线程
         return bthread::TaskGroup::start_foreground(&g, tid, attr, fn, arg);
     }
     return bthread::start_from_non_worker(tid, attr, fn, arg);

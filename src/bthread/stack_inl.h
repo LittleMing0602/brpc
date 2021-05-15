@@ -82,7 +82,7 @@ template <> struct StackFactory<MainStackClass> {
         if (NULL == s) {
             return NULL;
         }
-        s->context = NULL;
+        s->context = NULL;  // 栈切换的时候这里会保存pthread的栈
         s->stacktype = STACK_TYPE_MAIN;
         s->storage.zeroize();
         return s;

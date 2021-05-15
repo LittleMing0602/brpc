@@ -72,7 +72,7 @@ void* TaskControl::worker_thread(void* arg) {
     BT_VLOG << "Created worker=" << pthread_self()
             << " bthread=" << g->main_tid();
 
-    tls_task_group = g;  // 初始化tls_task_group，指向该worker线程的task_group
+    tls_task_group = g;  // 初始化tls_task_group，指向该worker线程的task_group, 只有worker线程的tls_task_group为非空
     c->_nworkers << 1;
     g->run_main_task();  // 执行主任务，不断循环等待可以执行的bthread，包括去其他的worker线程偷
 
@@ -160,7 +160,8 @@ int TaskControl::init(int concurrency) {
         LOG(ERROR) << "Fail to get global_timer_thread";
         return -1;
     }
-    
+
+    // 创建concurrency个bthread_worker线程
     _workers.resize(_concurrency);   
     for (int i = 0; i < _concurrency; ++i) {
         const int rc = pthread_create(&_workers[i], NULL, worker_thread, this);

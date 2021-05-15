@@ -149,7 +149,7 @@ void TaskGroup::run_main_task() {
 
     TaskGroup* dummy = this;
     bthread_t tid;
-    while (wait_task(&tid)) {
+    while (wait_task(&tid)) { // 如果有可执行的bthread，wait_task会返回tid，否则将阻塞当前worker
         TaskGroup::sched_to(&dummy, tid);
         DCHECK_EQ(this, dummy);
         DCHECK_EQ(_cur_meta->stack, _main_stack);
@@ -210,19 +210,23 @@ TaskGroup::~TaskGroup() {
 }
 
 int TaskGroup::init(size_t runqueue_capacity) {
+    // 创建_rq队列
     if (_rq.init(runqueue_capacity) != 0) {
         LOG(FATAL) << "Fail to init _rq";
         return -1;
     }
+    // 创建_remote_rq队列
     if (_remote_rq.init(runqueue_capacity / 2) != 0) {
         LOG(FATAL) << "Fail to init _remote_rq";
         return -1;
     }
-    ContextualStack* stk = get_stack(STACK_TYPE_MAIN, NULL);
+    // 创建main_stack
+    ContextualStack* stk = get_stack(STACK_TYPE_MAIN, NULL);  // 分配的栈类型STACK_TYPE_MAIN
     if (NULL == stk) {
         LOG(FATAL) << "Fail to get main stack container";
         return -1;
     }
+    // 创建main_tid
     butil::ResourceId<TaskMeta> slot;
     TaskMeta* m = butil::get_resource<TaskMeta>(&slot);
     if (NULL == m) {
@@ -258,7 +262,7 @@ void TaskGroup::task_runner(intptr_t skip_remained) {
         while (g->_last_context_remained) {
             RemainedFn fn = g->_last_context_remained;
             g->_last_context_remained = NULL;
-            fn(g->_last_context_remained_arg);
+            fn(g->_last_context_remained_arg);  // 首先运行remain函数
             g = tls_task_group;
         }
 
@@ -293,13 +297,13 @@ void TaskGroup::task_runner(intptr_t skip_remained) {
         // libraries.
         void* thread_return;
         try {
-            thread_return = m->fn(m->arg);
+            thread_return = m->fn(m->arg);  // 执行meta函数
         } catch (ExitException& e) {
             thread_return = e.value();
         }
 
         // Group is probably changed
-        g = tls_task_group;
+        g = tls_task_group;  // meta函数执行过程中，该bthread可能会调度到其他worker，因此task_group可能发生改变，所以重新对g进行设置
 
         // TODO: Save thread_return
         (void)thread_return;
@@ -337,7 +341,7 @@ void TaskGroup::task_runner(intptr_t skip_remained) {
 
         g->_control->_nbthreads << -1;
         g->set_remained(TaskGroup::_release_last_context, m);
-        ending_sched(&g);
+        ending_sched(&g);  // 尝试获取一个可执行的bthread, 如果没有的胡啊，则下一个执行的则为main_tid对应的meta
 
     } while (g->_cur_meta->tid != g->_main_tid);
 
@@ -366,6 +370,7 @@ int TaskGroup::start_foreground(TaskGroup** pg,
     }
     const int64_t start_ns = butil::cpuwide_time_ns();  // 开始时间，单位为ns
     const bthread_attr_t using_attr = (attr ? *attr : BTHREAD_ATTR_NORMAL);
+    // 创建TaskMeta（这里是从资源池获取）
     butil::ResourceId<TaskMeta> slot;  //资源id，uint64的包装
     TaskMeta* m = butil::get_resource(&slot);  // 获取一个TaskMeta
     if (__builtin_expect(!m, 0)) {
@@ -400,14 +405,14 @@ int TaskGroup::start_foreground(TaskGroup** pg,
         if (g->current_task()->about_to_quit) {
             fn = ready_to_run_in_worker_ignoresignal;
         } else {
-            fn = ready_to_run_in_worker;
+            fn = ready_to_run_in_worker;  // remain函数，start_foreground会抢占当前bthread的执行，通过remain函数将当前bthread重新push到rq中等待执行
         }
         ReadyToRunArgs args = {
             g->current_tid(),
             (bool)(using_attr.flags & BTHREAD_NOSIGNAL)
         };
-        g->set_remained(fn, &args);
-        TaskGroup::sched_to(pg, m->tid);
+        g->set_remained(fn, &args);  // 设置remain函数，bthread在执行自己的meta之前会执行remain函数
+        TaskGroup::sched_to(pg, m->tid);  // 直接切换运行，而不是加入到rq中去等待
     }
     return 0;
 }
@@ -422,6 +427,7 @@ int TaskGroup::start_background(bthread_t* __restrict th,
     }
     const int64_t start_ns = butil::cpuwide_time_ns();
     const bthread_attr_t using_attr = (attr ? *attr : BTHREAD_ATTR_NORMAL);
+    // 创建taskMeta
     butil::ResourceId<TaskMeta> slot;
     TaskMeta* m = butil::get_resource(&slot);
     if (__builtin_expect(!m, 0)) {
@@ -445,9 +451,9 @@ int TaskGroup::start_background(bthread_t* __restrict th,
     }
     _control->_nbthreads << 1;
     if (REMOTE) {
-        ready_to_run_remote(m->tid, (using_attr.flags & BTHREAD_NOSIGNAL));
+        ready_to_run_remote(m->tid, (using_attr.flags & BTHREAD_NOSIGNAL));  // 将该tid加入到taskgroup中的remote_rq中
     } else {
-        ready_to_run(m->tid, (using_attr.flags & BTHREAD_NOSIGNAL));
+        ready_to_run(m->tid, (using_attr.flags & BTHREAD_NOSIGNAL));  // 将tid push到rq中去，而不是直接切换运行
     }
     return 0;
 }
@@ -544,7 +550,7 @@ void TaskGroup::ending_sched(TaskGroup** pg) {
             }
         }
     }
-    sched_to(pg, next_meta);
+    sched_to(pg, next_meta);  // 跳转到下一个meta
 }
 
 void TaskGroup::sched(TaskGroup** pg) {
@@ -600,10 +606,10 @@ void TaskGroup::sched_to(TaskGroup** pg, TaskMeta* next_meta) {
                       << next_meta->tid;
         }
 
-        // 进行堆栈的切换
+        // 进行栈的切换
         if (cur_meta->stack != NULL) {
             if (next_meta->stack != cur_meta->stack) {
-                jump_stack(cur_meta->stack, next_meta->stack);
+                jump_stack(cur_meta->stack, next_meta->stack);  // 切换栈
                 // probably went to another group, need to assign g again.
                 g = tls_task_group;
             }
