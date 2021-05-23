@@ -64,7 +64,7 @@ friend class IOBufAsZeroCopyOutputStream;
 friend class IOBufBytesIterator;
 friend class IOBufCutter;
 public:
-    static const size_t DEFAULT_BLOCK_SIZE = 8192;
+    static const size_t DEFAULT_BLOCK_SIZE = 8192;  // 默认Block大小为8k
     static const size_t INITIAL_CAP = 32; // must be power of 2
 
     struct Block;
@@ -84,12 +84,12 @@ public:
     };
 
     struct BigView {
-        int32_t magic;
+        int32_t magic;  // -1表示是BigView， >=0表示是SmallView
         uint32_t start;
-        BlockRef* refs;
-        uint32_t nref;
-        uint32_t cap_mask;
-        size_t nbytes;
+        BlockRef* refs;  // BlockRef数组
+        uint32_t nref;  // BlockRef数量
+        uint32_t cap_mask;  // 数组容量-1
+        size_t nbytes;  // 所有BlockRef指向的block的数据量
 
         const BlockRef& ref_at(uint32_t i) const
         { return refs[(start + i) & cap_mask]; }
@@ -538,9 +538,9 @@ class IOBufAsZeroCopyInputStream
 public:
     explicit IOBufAsZeroCopyInputStream(const IOBuf&);
 
-    bool Next(const void** data, int* size) override;
-    void BackUp(int count) override;
-    bool Skip(int count) override;
+    bool Next(const void** data, int* size) override;  // 返回IOBuf中的数据
+    void BackUp(int count) override;  // 回退n个字节
+    bool Skip(int count) override;  // 跳过n个字节
     google::protobuf::int64 ByteCount() const override;
 
 private:
@@ -570,8 +570,8 @@ public:
     IOBufAsZeroCopyOutputStream(IOBuf*, uint32_t block_size);
     ~IOBufAsZeroCopyOutputStream();
 
-    bool Next(void** data, int* size) override;
-    void BackUp(int count) override; // `count' can be as long as ByteCount()
+    bool Next(void** data, int* size) override;  // 返回一段可写入的连续内存(*data)，长度为*size
+    void BackUp(int count) override; // `count' can be as long as ByteCount()  归还不需要使用的内存
     google::protobuf::int64 ByteCount() const override;
 
 private:

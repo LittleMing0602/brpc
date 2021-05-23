@@ -31,11 +31,11 @@
 namespace bthread {
 
 struct StackStorage {  //栈分配时会通过mmap匿名映射一段空间，然后将高地址位赋值给bottom
-     int stacksize;
-     int guardsize;
+     int stacksize;  // stack有效大小
+     int guardsize;  // guardpage的大小，使用mprotect为保护地址空间，用于检测stack_overflow
     // Assume stack grows upwards.
     // http://www.boost.org/doc/libs/1_55_0/libs/context/doc/html/context/stack.html
-    void* bottom;
+    void* bottom;  // 栈底指针（高地址端）
     unsigned valgrind_stack_id;
 
     // Clears all members.

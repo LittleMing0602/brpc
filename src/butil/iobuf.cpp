@@ -195,11 +195,11 @@ struct UserDataExtension {
 };
 
 struct IOBuf::Block {
-    butil::atomic<int> nshared;
+    butil::atomic<int> nshared;  // 表示当前Block被多少个BlockRef所引用
     uint16_t flags;
     uint16_t abi_check;  // original cap, never be zero.
-    uint32_t size;
-    uint32_t cap;
+    uint32_t size;  // 使用了的大小
+    uint32_t cap;  // 容量
     Block* portal_next;
     // When flag is 0, data points to `size` bytes starting at `(char*)this+sizeof(Block)'
     // When flag & IOBUF_BLOCK_FLAGS_USER_DATA is non-0, data points to the user data and
@@ -303,7 +303,7 @@ inline IOBuf::Block* create_block(const size_t block_size) {
         return NULL;
     }
     return new (mem) IOBuf::Block(mem + sizeof(IOBuf::Block),
-                                  block_size - sizeof(IOBuf::Block));
+                                  block_size - sizeof(IOBuf::Block));  // placement new
 }
 
 inline IOBuf::Block* create_block() {
@@ -361,10 +361,11 @@ void remove_tls_block_chain() {
 IOBuf::Block* share_tls_block() {
     TLSData& tls_data = g_tls_data;
     IOBuf::Block* const b = tls_data.block_head;
-    if (b != NULL && !b->full()) {
+    if (b != NULL && !b->full()) {  // 如果头结点没有满，直接返回b
         return b;
     }
     IOBuf::Block* new_block = NULL;
+    // 如果满了就将b从tls移除，直至找到一个没有满的block或者到移除了所有block
     if (b) {
         new_block = b;
         while (new_block && new_block->full()) {
@@ -373,7 +374,7 @@ IOBuf::Block* share_tls_block() {
             --tls_data.num_blocks;
             new_block = saved_next;
         }
-    } else if (!tls_data.registered) {
+    } else if (!tls_data.registered) {  // 没有注册线程退出函数，就注册一下
         tls_data.registered = true;
         // Only register atexit at the first time
         butil::thread_atexit(remove_tls_block_chain);
@@ -545,18 +546,18 @@ void IOBuf::operator=(const IOBuf& rhs) {
 template <bool MOVE>
 void IOBuf::_push_or_move_back_ref_to_smallview(const BlockRef& r) {
     BlockRef* const refs = _sv.refs;
-    if (NULL == refs[0].block) {
+    if (NULL == refs[0].block) {  // 如果sv是空的，置sv[0]为r，r所指的block引用计数加1
         refs[0] = r;
         if (!MOVE) {
             r.block->inc_ref();
         }
         return;
     }
-    if (NULL == refs[1].block) {
+    if (NULL == refs[1].block) {  // 如果sv[0]非空，sv[1]是空的，尝试合并ref[0]和r，不能合并则将r放到ref[1]中去
         if (refs[0].block == r.block &&
             refs[0].offset + refs[0].length == r.offset) { // Merge ref
             refs[0].length += r.length;
-            if (MOVE) {
+            if (MOVE) {  // 如果是移动语义，则block引用计数-1
                 r.block->dec_ref();
             }
             return;
@@ -567,6 +568,8 @@ void IOBuf::_push_or_move_back_ref_to_smallview(const BlockRef& r) {
         }
         return;
     }
+
+    // 如果都不非空，则尝试合并ref[1]和r，不能合并则将sv转成bv，并将r添加到bv中
     if (refs[1].block == r.block &&
         refs[1].offset + refs[1].length == r.offset) { // Merge ref
         refs[1].length += r.length;
@@ -576,7 +579,7 @@ void IOBuf::_push_or_move_back_ref_to_smallview(const BlockRef& r) {
         return;
     }
     // Convert to BigView
-    BlockRef* new_refs = iobuf::acquire_blockref_array();
+    BlockRef* new_refs = iobuf::acquire_blockref_array(); // 默认32个BlockRef
     new_refs[0] = refs[0];
     new_refs[1] = refs[1];
     new_refs[2] = r;
@@ -597,6 +600,7 @@ template void IOBuf::_push_or_move_back_ref_to_smallview<false>(const BlockRef&)
 
 template <bool MOVE>
 void IOBuf::_push_or_move_back_ref_to_bigview(const BlockRef& r) {
+    // 判断r是否可以与bv最后一个ref合并，不能则添加到bv后
     BlockRef& back = _bv.ref_at(_bv.nref - 1);
     if (back.block == r.block && back.offset + back.length == r.offset) {
         // Merge ref
@@ -1556,6 +1560,7 @@ ssize_t IOPortal::pappend_from_file_descriptor(
     Block* prev_p = NULL;
     Block* p = _block;
     // Prepare at most MAX_APPEND_IOVEC blocks or space of blocks >= max_count
+    // 不断申请block，直到这些blocks剩余空间能够存下max_count的数据
     do {
         if (p == NULL) {
             p = iobuf::acquire_tls_block();
@@ -1594,6 +1599,7 @@ ssize_t IOPortal::pappend_from_file_descriptor(
         return nr;
     }
 
+    // 更新sv或bv（smallView或bigView）
     size_t total_len = nr;
     do {
         const size_t len = std::min(total_len, _block->left_space());

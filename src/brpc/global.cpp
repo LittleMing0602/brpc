@@ -312,7 +312,7 @@ static void GlobalInitializeOrDieImpl() {
     // values even if the gflags will be set after main().          //
     //////////////////////////////////////////////////////////////////
 
-    // Ignore SIGPIPE.
+    // Ignore SIGPIPE.首先忽略SIGPIPE信号
     struct sigaction oldact;
     if (sigaction(SIGPIPE, NULL, &oldact) != 0 ||
             (oldact.sa_handler == NULL && oldact.sa_sigaction == NULL)) {
@@ -326,7 +326,7 @@ static void GlobalInitializeOrDieImpl() {
     // the variable before main() for only once.
     // setenv("TCMALLOC_SAMPLE_PARAMETER", "524288", 0);
 
-    // Initialize openssl library
+    // Initialize openssl library  初始化SSL
     SSL_library_init();
     // RPC doesn't require openssl.cnf, users can load it by themselves if needed
     SSL_load_error_strings();
@@ -342,7 +342,7 @@ static void GlobalInitializeOrDieImpl() {
     if (NULL == g_ext) {
         exit(1);
     }
-    // Naming Services
+    // Naming Services 注册NamingService
 #ifdef BAIDU_INTERNAL
     NamingServiceExtension()->RegisterOrDie("bns", &g_ext->bns);
 #endif
@@ -382,7 +382,7 @@ static void GlobalInitializeOrDieImpl() {
         exit(1);
     }
 
-    // Protocols
+    // Protocols  注册协议
     Protocol baidu_protocol = { ParseRpcMessage,
                                 SerializeRequestDefault, PackRpcRequest,
                                 ProcessRpcRequest, ProcessRpcResponse,
@@ -572,6 +572,7 @@ static void GlobalInitializeOrDieImpl() {
         exit(1);
     }
 
+    // 遍历协议，将含有process_response的协议加入到client端InputMessenger的handler中
     std::vector<Protocol> protocols;
     ListProtocols(&protocols);
     for (size_t i = 0; i < protocols.size(); ++i) {

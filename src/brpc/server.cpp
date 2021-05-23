@@ -709,7 +709,7 @@ int Server::StartInternal(const butil::ip_t& ip,
             "fix it before starting server";
         return -1;
     }
-    if (InitializeOnce() != 0) {
+    if (InitializeOnce() != 0) {  // 初始化
         LOG(ERROR) << "Fail to initialize Server[" << version() << ']';
         return -1;
     }
@@ -934,7 +934,7 @@ int Server::StartInternal(const butil::ip_t& ip,
         }
     }
 
-    // Create listening ports
+    // Create listening ports 创建Acceptor
     if (port_range.min_port > port_range.max_port) {
         LOG(ERROR) << "Invalid port_range=[" << port_range.min_port << '-'
                    << port_range.max_port << ']';
@@ -1169,13 +1169,13 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
         return -1;
     }
     const google::protobuf::ServiceDescriptor* sd = service->GetDescriptor();
-    if (sd->method_count() == 0) {
+    if (sd->method_count() == 0) {  // 判断注册的service里是否有method
         LOG(ERROR) << "service=" << sd->full_name()
                    << " does not have any method.";
         return -1;
     }
 
-    if (InitializeOnce() != 0) {
+    if (InitializeOnce() != 0) {  // 只进行一次初始化
         LOG(ERROR) << "Fail to initialize Server[" << version() << ']';
         return -1;
     }
@@ -1185,10 +1185,12 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
         return -1;
     }
 
+    // 判断当前service有没有注册过
     if (_fullname_service_map.seek(sd->full_name()) != NULL) {
         LOG(ERROR) << "service=" << sd->full_name() << " already exists";
         return -1;
     }
+
     ServiceProperty* old_ss = _service_map.seek(sd->name());
     if (old_ss != NULL) {
         // names conflict.
@@ -1201,6 +1203,7 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
     // defined `option (idl_support) = true' or not.
     const bool is_idl_support = sd->file()->options().GetExtension(idl_support);
 
+    // 注册所有service的所有method，保存到_method_map中去
     Tabbed* tabbed = dynamic_cast<Tabbed*>(service);
     for (int i = 0; i < sd->method_count(); ++i) {
         const google::protobuf::MethodDescriptor* md = sd->method(i);
@@ -1235,6 +1238,7 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
         }
     }
 
+    // 注册service到_fullname_service_map和_service_map中去
     const ServiceProperty ss = {
         is_builtin_service, svc_opt.ownership, service, NULL };
     _fullname_service_map[sd->full_name()] = ss;

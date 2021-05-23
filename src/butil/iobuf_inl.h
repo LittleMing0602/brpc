@@ -54,6 +54,7 @@ inline void reset_block_ref(IOBuf::BlockRef& ref) {
     ref.block = NULL;
 }
 
+// 默认构造函数，初始化sv
 inline IOBuf::IOBuf() {
     reset_block_ref(_sv.refs[0]);
     reset_block_ref(_sv.refs[1]);
